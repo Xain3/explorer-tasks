@@ -316,6 +316,11 @@
         {
           "command": "explorerTasks.runTask",
           "when": "view == explorerTasks.tasksView && (viewItem == explorerTask || viewItem == explorerTaskHidden)",
+          "group": "inline@1"
+        },
+        {
+          "command": "explorerTasks.runTask",
+          "when": "view == explorerTasks.tasksView && (viewItem == explorerTask || viewItem == explorerTaskHidden)",
           "group": "1_run@1"
         },
         {

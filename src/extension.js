@@ -155,10 +155,7 @@ class TasksProvider {
           task,
           key,
           !duplicateLabel && executionsByTask.has(key),
-          configuredTaskIcon(definition),
-          definition?.hide === true,
-          false,
-          duplicateLabel
+          { definition, duplicate: duplicateLabel }
         );
       });
       const orphanItems = [];
@@ -178,9 +175,7 @@ class TasksProvider {
           execution.task,
           key,
           true,
-          undefined,
-          false,
-          true
+          { orphan: true }
         ));
       }
 
@@ -312,7 +307,7 @@ class TasksProvider {
 }
 
 class TaskItem extends vscode.TreeItem {
-  constructor(task, key, running, icon, hidden, orphan = false, duplicate = false) {
+  constructor(task, key, running, { definition, orphan = false, duplicate = false }) {
     super(
       task.name,
       vscode.TreeItemCollapsibleState.None
@@ -322,6 +317,8 @@ class TaskItem extends vscode.TreeItem {
     this.key = key;
     this.running = running;
 
+    const icon = configuredTaskIcon(definition);
+    const hidden = definition?.hide === true;
     this.hidden = hidden;
     this.orphan = orphan;
     this.duplicate = duplicate;
@@ -342,6 +339,10 @@ class TaskItem extends vscode.TreeItem {
       this.description = "Running · no matching definition";
     } else if (hidden) {
       this.description = "Hidden";
+    }
+    const scope = taskScopeDescription(task);
+    if (scope) {
+      this.description = this.description ? `${this.description} · ${scope}` : scope;
     }
     if (duplicate) {
       this.resourceUri = vscode.Uri.parse(
@@ -369,15 +370,7 @@ class TaskItem extends vscode.TreeItem {
       );
     }
 
-    if (!running && !duplicate) {
-      this.command = {
-        command: "explorerTasks.runTask",
-        title: "Run Task",
-        arguments: [this]
-      };
-    }
-
-    this.tooltip = new vscode.MarkdownString();
+    this.tooltip = new vscode.MarkdownString(undefined, true);
 
     this.tooltip.appendMarkdown(
       `**${escapeMarkdown(task.name)}**\n\n`
@@ -387,6 +380,14 @@ class TaskItem extends vscode.TreeItem {
       this.tooltip.appendMarkdown(
         `${escapeMarkdown(task.detail)}\n\n`
       );
+    }
+    if (scope) {
+      this.tooltip.appendMarkdown("**Scope** ");
+      this.tooltip.appendText(scope);
+      this.tooltip.appendMarkdown("\n\n");
+    }
+    if (!duplicate && !orphan) {
+      appendTaskPreview(this.tooltip, task, definition);
     }
 
     if (duplicate) {
@@ -403,12 +404,57 @@ class TaskItem extends vscode.TreeItem {
       );
     } else {
       this.tooltip.appendMarkdown(
-        `$(play) Click to run`
+        `$(play) Use the Run action to start this task`
       );
     }
-
-    this.tooltip.supportThemeIcons = true;
   }
+}
+
+function taskScopeDescription(task) {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!(folders?.length > 1)) return undefined;
+  if (task.scope === vscode.TaskScope.Workspace) return "Workspace tasks";
+  if (!task.scope || typeof task.scope !== "object") return undefined;
+
+  const { name, uri } = task.scope;
+  const location = uri.toString();
+  const sharedName = folders.some(folder =>
+    folder.name === name && folder.uri.toString() !== location
+  );
+  return sharedName || !name ? location : name;
+}
+
+function appendTaskPreview(tooltip, task, definition) {
+  const execution = task.execution;
+  const executable = execution?.commandLine || execution?.command || execution?.process;
+  const command = commandValue(executable || definition?.command);
+  if (typeof command === "string" && command.length > 0) {
+    appendPreviewCode(tooltip, "Command", command);
+
+    const args = executable ? execution.args : definition?.args;
+    if (!execution?.commandLine && Array.isArray(args) && args.length > 0) {
+      appendPreviewCode(tooltip, "Arguments", JSON.stringify(args.map(commandValue)));
+    }
+  }
+
+  const dependsOn = definition?.dependsOn;
+  const dependencies = Array.isArray(dependsOn) ? dependsOn : dependsOn ? [dependsOn] : [];
+  if (dependencies.length > 0) {
+    const labels = dependencies.map(dependency =>
+      typeof dependency === "string" ? dependency : JSON.stringify(dependency)
+    );
+    appendPreviewCode(tooltip, "Depends on", labels.join("\n"));
+  }
+}
+
+function appendPreviewCode(tooltip, heading, text) {
+  // Indenting every line keeps workspace text inside the Markdown code block.
+  const block = text.split(/\r\n|\r|\n/).map(line => `    ${line}`).join("\n");
+  tooltip.appendMarkdown(`**${heading}**\n\n${block}\n\n`);
+}
+
+function commandValue(value) {
+  return typeof value === "string" ? value : value?.value;
 }
 
 function activate(context) {

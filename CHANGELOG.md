@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Select task rows and start tasks with a dedicated Run action.
+- Show each task’s scope in multi-root workspaces and preview commands, arguments, and dependencies in tooltips.
+
 ## 1.0.2
 
 - Prevent the Create `tasks.json` action from appearing briefly while project tasks are still loading.

@@ -28,12 +28,66 @@ test("running an unselected task does not change list selection", async () => {
   assert.equal(app.uiCommands.length, 0);
 });
 
+test("idle task rows have no command to execute on selection", async () => {
+  const app = setup();
+  const [item] = await app.provider.getChildren();
+  app.treeView.selection = [item];
+  assert.equal(item.command, undefined);
+  assert.equal(app.provider.getExecution(item), undefined);
+});
+
 test("task detail appears safely in its tooltip", async () => {
   const app = setup();
   app.vscode.tasks.fetchTasks = async () => [{ ...task, detail: "Build *production*" }];
   const [item] = await app.provider.getChildren();
   assert.match(item.tooltip.value, /Build \\\*production\\\*/);
-  assert.match(item.tooltip.value, /Click to run/);
+  assert.match(item.tooltip.value, /Use the Run action/);
+});
+
+test("task tooltips preview VS Code's command and argument boundaries with configured dependencies", async () => {
+  const app = setup();
+  app.vscode.workspace.getConfiguration = section => section === "explorerTasks"
+    ? { get: (_, fallback) => fallback }
+    : { inspect: () => ({ workspaceValue: [{
+        label: "watch",
+        command: "default-command",
+        dependsOn: ["Typecheck", { type: "npm", script: "lint" }]
+      }] }) };
+  app.vscode.tasks.fetchTasks = async () => [{
+    ...task,
+    execution: { command: "platform-command", args: ["--output", { value: "dist folder", quoting: 2 }] }
+  }];
+
+  const [item] = await app.provider.getChildren();
+  assert(item.tooltip.value.includes("**Command**\n\n    platform-command\n\n"));
+  assert(item.tooltip.value.includes('**Arguments**\n\n    ["--output","dist folder"]\n\n'));
+  assert(item.tooltip.value.includes('**Depends on**\n\n    Typecheck\n    {"type":"npm","script":"lint"}\n\n'));
+  assert(!item.tooltip.value.includes("default-command"));
+});
+
+test("task tooltips show the configured command when no execution details are available", async () => {
+  const app = setup();
+  app.vscode.workspace.getConfiguration = section => section === "explorerTasks"
+    ? { get: (_, fallback) => fallback }
+    : { inspect: () => ({ workspaceValue: [{
+        label: "watch", command: "npm", args: ["run", "watch"], dependsOn: "Prepare"
+      }] }) };
+
+  const [item] = await app.provider.getChildren();
+  assert(item.tooltip.value.includes("**Command**\n\n    npm\n\n"));
+  assert(item.tooltip.value.includes('**Arguments**\n\n    ["run","watch"]\n\n'));
+  assert(item.tooltip.value.includes("**Depends on**\n\n    Prepare\n\n"));
+});
+
+test("a multiline command stays in the tooltip code block", async () => {
+  const app = setup();
+  app.vscode.tasks.fetchTasks = async () => [{
+    ...task,
+    execution: { commandLine: "npm run build\r\n```\r\n[link](https://example.com)" }
+  }];
+
+  const [item] = await app.provider.getChildren();
+  assert(item.tooltip.value.includes("    npm run build\n    ```\n    [link](https://example.com)\n\n"));
 });
 
 test("configured task icons and colors are shown", async () => {
@@ -290,6 +344,7 @@ function setup(initial = []) {
     MarkdownString: class {
       constructor() { this.value = ""; }
       appendMarkdown(value) { this.value += value; }
+      appendText(value) { this.value += value; }
     },
     tasks: {
       taskExecutions: [...initial],
@@ -686,13 +741,18 @@ test("state-specific view commands set explicit states", async () => {
 test("tasks with the same name in different folders remain independent", async () => {
   const app = setup();
   const tasks = ["one", "two"].map(name => ({ ...task, scope: { name, uri: { toString: () => `file:///${name}` } } }));
+  app.vscode.workspace.workspaceFolders = tasks.map(item => item.scope);
   app.vscode.tasks.fetchTasks = async () => tasks;
   app.start(execution(tasks[0]));
   const items = await app.provider.getChildren();
   assert.equal(items[0].running, true);
   assert.equal(items[1].running, false);
   assert.equal(items[1].task.scope.name, "two");
-  assert.equal(items[1].description, undefined);
+  assert.equal(items[0].description, "one");
+  assert.equal(items[1].description, "two");
+  assert.match(items[1].tooltip.value, /\*\*Scope\*\* two/);
+  await app.commands.get("explorerTasks.runTask")(items[1]);
+  assert.equal(app.provider.getExecution(items[1]).task, tasks[1]);
 });
 
 test("duplicate labels in one scope are disabled warning rows and reported once", async () => {
@@ -930,7 +990,7 @@ test("activation resources include provider cleanup", () => {
   assert.equal(app.provider.runningTasks.size, 0);
 });
 
-test("Run stays in the context menu while Stop and Modify remain inline", () => {
+test("Run is available inline and in the context menu for idle tasks", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
   for (const command of ["explorerTasks.runTask", "explorerTasks.stopTask", "explorerTasks.modifyTask"]) {
     assert(manifest.contributes.menus.commandPalette.some(entry => entry.command === command && entry.when === "false"));
@@ -951,7 +1011,13 @@ test("Run stays in the context menu while Stop and Modify remain inline", () => 
   assert(itemMenus
     .filter(entry => entry.command !== "explorerTasks.duplicateLabelWarning")
     .every(entry => !entry.when.includes("explorerTaskDuplicate")));
-  assert(!itemMenus.find(entry => entry.command === "explorerTasks.runTask").group.startsWith("inline"));
+  const runEntries = itemMenus.filter(entry => entry.command === "explorerTasks.runTask");
+  assert.equal(runEntries.length, 2);
+  assert(runEntries.some(entry => entry.group === "inline@1"));
+  assert(runEntries.some(entry => !entry.group.startsWith("inline")));
+  for (const entry of runEntries) {
+    assert.match(entry.when, /\(viewItem == explorerTask \|\| viewItem == explorerTaskHidden\)$/);
+  }
   assert(itemMenus.find(entry => entry.command === "explorerTasks.stopTask").group.startsWith("inline"));
   assert(itemMenus.find(entry => entry.command === "explorerTasks.modifyTask").group.startsWith("inline"));
   assert.deepEqual(
