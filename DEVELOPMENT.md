@@ -29,15 +29,15 @@ npm test
 
 Before completing a release, manually verify:
 
-- Clicking an idle task runs it; stopping requires the inline Stop action.
+- Clicking a task row selects it. The inline and context-menu Run actions start an idle task, and the inline Stop action terminates it.
 - The Modify action opens the correct task definition without selecting text.
 - Running state updates for tasks started inside and outside the extension.
-- Task details appear in tooltips.
+- Tooltips show task details, including the command, arguments, and dependencies when available.
 - Per-task hide/unhide and the conditional show-hidden control preserve JSONC formatting; revealed hidden tasks are visually deemphasized and running hidden tasks remain visible until their final execution stops.
 - Nested ` / ` groups, expansion controls, and flat/tree switching work.
 - View controls appear only when grouped tasks exist and show the correct icons.
 - Editing `tasks.json` refreshes the view.
-- Workspace and folder tasks retain their expected order in a multi-root workspace.
+- Workspace and folder tasks retain their expected order and show their scope in a multi-root workspace.
 
 ## Build the VSIX
 

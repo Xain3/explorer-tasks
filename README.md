@@ -31,10 +31,11 @@ See the [VS Code Tasks guide](https://code.visualstudio.com/docs/editor/tasks) f
 
 ## Task controls
 
-- Click an idle task to run it.
+- Click a task row to select it. To start an idle task, use its inline **Run** button or choose **Run** from its context menu.
 - Click the Stop action to terminate a running task.
 - Click the Edit action to open its definition in `tasks.json`.
 - Click the Hide/Unhide action to hide or reveal a task in the view.
+- Hover over a task to preview its command, arguments, and configured dependencies when available. In multi-root workspaces, each row shows its source folder or workspace scope.
 
 *Remarks:*
 
